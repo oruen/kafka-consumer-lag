@@ -1,0 +1,27 @@
+= Kafka Consumer Lag
+
+Small utility to get consumer lag from Kafka-stored consumer offsets.
+
+== Usage
+
+There are 2 type of usage.
+1. Using command line args:
+
+    kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667 --topic topic_name --group-id consumer_group_id
+
+The output of the command will be:
+
+    topic_name consumer_group_id 123
+
+Where 123 is an aggregated lag.
+
+2. Using stdin:
+
+    echo "topic_name1 concumer_group_id1" >> tmp.txt
+    echo "topic_name2 concumer_group_id2" >> tmp.txt
+    cat tmp.txt | kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667
+
+The output of the command will be:
+
+    topic_name1 consumer_group_id1 123
+    topic_name2 consumer_group_id2 321
