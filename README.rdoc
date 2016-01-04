@@ -11,17 +11,27 @@ There are 2 type of usage.
 
 The output of the command will be:
 
-    topic_name consumer_group_id 123
+    consumer_group_id topic_name consumer_group_id 123
 
 Where 123 is an aggregated lag.
 
 2. Using stdin:
 
-    echo "topic_name1 concumer_group_id1" >> tmp.txt
-    echo "topic_name2 concumer_group_id2" >> tmp.txt
+    echo "consumer_group_id1 topic_name1" >> tmp.txt
+    echo "consumer_group_id2 topic_name2" >> tmp.txt
     cat tmp.txt | kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667
 
 The output of the command will be:
 
-    topic_name1 consumer_group_id1 123
-    topic_name2 consumer_group_id2 321
+    consumer_group_id1 topic_name1 123
+    consumer_group_id2 topic_name2 321
+
+Also there is "timelag" command available:
+
+    kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667 --topic topic_name --group-id consumer_group_id --command timelag
+
+The output of the command will be:
+
+    consumer_group_id topic_name 123
+
+Where 123 lag in seconds for the last consumed message.

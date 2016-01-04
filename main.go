@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"github.com/ugorji/go/codec"
 	"os"
 	"strings"
+	"time"
 )
 
 var groupIdInput = flag.String("group-id", "", "Comma-separated consumer group ids")
@@ -15,6 +17,16 @@ var groupIdInput = flag.String("group-id", "", "Comma-separated consumer group i
 var brokersInput = flag.String("brokers", "", "List of broker addresses with ports, comma separated")
 
 var topicInput = flag.String("topic", "", "Topic name")
+
+var commandInput = flag.String("command", "lag", "Command")
+
+var msgpack codec.MsgpackHandle
+
+type ConsumerOffset struct {
+	Topic     string
+	Offset    int64
+	Partition int32
+}
 
 var brokers []string
 var kafkaClient sarama.Client
@@ -37,7 +49,7 @@ func processWithStdin() {
 	for scanner.Scan() {
 		parts := strings.Split(scanner.Text(), " ")
 		go func() {
-			processGroup(parts[1], parts[0])
+			processGroup(*commandInput, parts[0], parts[1])
 			controlChannel <- 1
 		}()
 		lines += 1
@@ -50,7 +62,7 @@ func processWithStdin() {
 func processWithArgs() {
 	checkArgs()
 	setupClient()
-	processGroup(*groupIdInput, *topicInput)
+	processGroup(*commandInput, *groupIdInput, *topicInput)
 }
 
 func setupClient() {
@@ -74,7 +86,7 @@ func checkArgs() {
 	}
 }
 
-func processGroup(groupId string, topic string) {
+func processGroup(command string, groupId string, topic string) {
 	partitions, err := kafkaClient.Partitions(topic)
 	if err != nil {
 		exit(err)
@@ -84,28 +96,75 @@ func processGroup(groupId string, topic string) {
 		exit(err)
 	}
 	var lag int64
+	var timestamps = make([]int64, len(partitions))
 	var controlChannel = make(chan int64)
 	for _, partition := range partitions {
-		go processPartition(topic, partition, controlChannel, offsetManager)
+		go processPartition(command, topic, partition, controlChannel, offsetManager)
 	}
-	for _ = range partitions {
-		partitionLag := <-controlChannel
-		lag += partitionLag
+	for _, partition := range partitions {
+		response := <-controlChannel
+		if command == "lag" {
+			lag += response
+		} else {
+			timestamps[partition] = response
+		}
 	}
-	fmt.Println(topic, groupId, lag)
+	if command == "timelag" {
+		max := timestamps[0]
+		for _, value := range timestamps {
+			if value > max {
+				max = value
+			}
+		}
+		lag = time.Now().Unix() - max
+	}
+	fmt.Println(groupId, topic, lag)
 }
 
-func processPartition(topic string, partition int32, controlChannel chan int64, offsetManager sarama.OffsetManager) {
+func processPartition(command string, topic string, partition int32, controlChannel chan int64, offsetManager sarama.OffsetManager) {
 	pom, err := offsetManager.ManagePartition(topic, int32(partition))
 	if err != nil {
 		exit(err)
 	}
 	consumerOffset, _ := pom.NextOffset()
 	offset, err := kafkaClient.GetOffset(topic, int32(partition), sarama.OffsetNewest)
+	//fmt.Println(topic, partition, consumerOffset, offset)
 	if err != nil {
 		exit(err)
 	}
-	controlChannel <- offset - consumerOffset + 1
+	var response int64
+	if command == "lag" {
+		response = offset - consumerOffset + 1
+	} else {
+		broker, err := kafkaClient.Leader(topic, partition)
+		if err != nil {
+			exit(err)
+		}
+		fetchRequest := sarama.FetchRequest{MaxWaitTime: 10000, MinBytes: 0}
+		fetchRequest.AddBlock(topic, partition, consumerOffset-2, 100000)
+		fetchResponse, err := broker.Fetch(&fetchRequest)
+		if err != nil {
+			exit(err)
+		}
+		block := fetchResponse.GetBlock(topic, partition)
+		messages := block.MsgSet.Messages
+		if len(messages) > 0 {
+			msg := messages[0].Messages()[0].Msg.Value
+			var decodedData map[string]interface{}
+			codec.NewDecoderBytes(msg, &msgpack).Decode(&decodedData)
+			timestamp := decodedData["timestamp"]
+			switch timestamp := timestamp.(type) {
+			case uint64:
+				response = int64(timestamp)
+			default:
+				fmt.Println(timestamp)
+				exit(errors.New("message is missing timestamp"))
+			}
+		} else {
+			response = 0
+		}
+	}
+	controlChannel <- response
 }
 
 func exit(err error) {
