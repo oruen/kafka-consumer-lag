@@ -97,31 +97,32 @@ func processGroup(command string, groupId string, topic string) {
 	}
 	var lag int64
 	var timestamps = make([]int64, len(partitions))
-	var controlChannel = make(chan int64)
+	var controlChannel = make(chan []int64)
 	for _, partition := range partitions {
 		go processPartition(command, topic, partition, controlChannel, offsetManager)
 	}
 	for _, partition := range partitions {
 		response := <-controlChannel
-		if command == "lag" {
-			lag += response
-		} else {
-			timestamps[partition] = response
+		lag += response[0]
+		if command == "lag_and_time" {
+			timestamps[partition] = response[1]
 		}
 	}
-	if command == "timelag" {
+	if command == "lag_and_time" {
 		max := timestamps[0]
 		for _, value := range timestamps {
 			if value > max {
 				max = value
 			}
 		}
-		lag = time.Now().Unix() - max
+		timelag := time.Now().Unix() - max
+		fmt.Println(groupId, topic, lag, timelag)
+	} else {
+		fmt.Println(groupId, topic, lag)
 	}
-	fmt.Println(groupId, topic, lag)
 }
 
-func processPartition(command string, topic string, partition int32, controlChannel chan int64, offsetManager sarama.OffsetManager) {
+func processPartition(command string, topic string, partition int32, controlChannel chan []int64, offsetManager sarama.OffsetManager) {
 	pom, err := offsetManager.ManagePartition(topic, int32(partition))
 	if err != nil {
 		exit(err)
@@ -132,10 +133,11 @@ func processPartition(command string, topic string, partition int32, controlChan
 	if err != nil {
 		exit(err)
 	}
-	var response int64
-	if command == "lag" {
-		response = offset - consumerOffset + 1
-	} else {
+	var response = make([]int64, 0)
+	var timelag int64
+	lag := offset - consumerOffset + 1
+	response = append(response, lag)
+	if command == "lag_and_time" {
 		broker, err := kafkaClient.Leader(topic, partition)
 		if err != nil {
 			exit(err)
@@ -155,14 +157,15 @@ func processPartition(command string, topic string, partition int32, controlChan
 			timestamp := decodedData["timestamp"]
 			switch timestamp := timestamp.(type) {
 			case uint64:
-				response = int64(timestamp)
+				timelag = int64(timestamp)
 			default:
 				fmt.Println(timestamp)
 				exit(errors.New("message is missing timestamp"))
 			}
 		} else {
-			response = 0
+			timelag = 0
 		}
+		response = append(response, timelag)
 	}
 	controlChannel <- response
 }

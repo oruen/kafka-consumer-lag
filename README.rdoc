@@ -28,10 +28,13 @@ The output of the command will be:
 
 Also there is "timelag" command available:
 
-    kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667 --topic topic_name --group-id consumer_group_id --command timelag
+    kafka-consumer-lag --brokers kafka01.home:6667,kafka02.home:6667 --topic topic_name --group-id consumer_group_id --command lag_and_time
 
 The output of the command will be:
 
-    consumer_group_id topic_name 123
+    consumer_group_id topic_name 456 123
 
-Where 123 lag in seconds for the last consumed message.
+Where 456 is lag in messages and 123 is lag in seconds for the last consumed message.
+
+Compile for ubuntu:
+    env GOOS=linux GOARCH=amd64 go build -o kafka-consumer-lag-ubuntu
