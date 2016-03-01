@@ -143,7 +143,7 @@ func processPartition(command string, topic string, partition int32, controlChan
 			exit(err)
 		}
 		fetchRequest := sarama.FetchRequest{MaxWaitTime: 10000, MinBytes: 0}
-		fetchRequest.AddBlock(topic, partition, consumerOffset-2, 100000)
+		fetchRequest.AddBlock(topic, partition, consumerOffset-2, 500000)
 		fetchResponse, err := broker.Fetch(&fetchRequest)
 		if err != nil {
 			exit(err)
