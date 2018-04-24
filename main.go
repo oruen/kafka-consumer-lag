@@ -124,6 +124,7 @@ func processGroup(command string, groupId string, topic string) {
 
 func processPartition(command string, topic string, partition int32, controlChannel chan []int64, offsetManager sarama.OffsetManager) {
 	pom, err := offsetManager.ManagePartition(topic, int32(partition))
+	defer pom.Close()
 	if err != nil {
 		exit(err)
 	}
